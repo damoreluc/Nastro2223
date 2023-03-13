@@ -1,0 +1,140 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="FB_MSF" Id="{fe297bed-26ef-42f2-ac09-2b82feefb983}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_MSF
+VAR_INPUT
+	start: BOOL;
+	stop : BOOL;
+	emg : BOOL;
+	ack : BOOL;
+	fc1 : BOOL;
+	fc2 : BOOL;
+END_VAR
+VAR_OUTPUT
+	H1 : BOOL;
+	HEMG : BOOL;
+	M : BOOL;
+	// il nastro è libero
+	libero : BOOL;
+END_VAR
+VAR
+	// abilitazione dell’automatismo
+	enable : BOOL;
+	// condizioni di transizione
+	tr_S0_S1 : BOOL;
+	tr_S1_S2 : BOOL;
+	tr_S2_S3 : BOOL;
+	tr_S3_S1 : BOOL;
+	tr_S3_S0 : BOOL;
+	tr_SE_SA : BOOL;
+	tr_SA_S0 : BOOL;
+	
+	// variabile di stato
+	stato : STATI := STATI.S0;
+
+	// timers
+	T31 : TON();
+	TA0 : TON();
+	
+	// triggers per segnalazione nastro libero
+	pckin : R_TRIG();
+	pckout: R_TRIG();
+	
+	// lampeggio
+	osc : FB_oscillatore();
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(*
+1. aggiornamento delle condizioni di abilitazione (stop, allarmi, etc)
+2. aggiornamento di timers, contatori, triggers sui fronti
+3. valutazione della condizione di arresto nominale
+4. valutazione della condizione di arresto di emergenza
+5. aggiornamento delle condizioni di transizione di stato
+6. switch-case della MSF
+7. comando delle uscite
+*)
+
+
+// 1. aggiornamento condizioni di abilitazione
+enable := stop AND emg;
+
+// 2. aggiornamento timers, contatori, triggers sui fronti
+T31(IN := (stato = STATI.S3 AND enable), PT := T#10S );
+TA0(IN := (stato = STATI.SA), PT := T#10S );
+pckin(clk:= fc1);
+pckout(clk:= fc2);
+osc(enable := (stato = STATI.SA), t_high := T#500mS, t_low := T#500ms);
+
+// 3. valutazione della condizione di arresto nominale
+IF NOT stop AND emg THEN
+	stato := STATI.S0;
+END_IF
+
+// 4. valutazione della condizione di arresto di emergenza
+IF NOT emg THEN
+	stato := STATI.SE;
+END_IF
+
+// 5. aggiornamento delle condizioni di transizione di stato
+tr_S0_S1 := enable AND start;
+tr_S1_S2 := enable AND fc1 AND NOT fc2;
+tr_S2_S3 := enable AND fc2;
+tr_S3_S1 := enable AND fc1 AND NOT fc2 AND NOT T31.Q;
+tr_S3_S0 := enable AND T31.Q;
+tr_SE_SA := enable AND ack;
+tr_SA_S0 := enable AND TA0.Q;
+
+// 6. switch-case della MSF
+CASE stato OF
+STATI.S0:
+	IF tr_S0_S1 THEN
+		stato := STATI.S1;
+	END_IF
+	
+STATI.S1:
+	IF tr_S1_S2 THEN
+		stato := STATI.S2;
+	END_IF
+
+STATI.S2:
+	IF tr_S2_S3 THEN
+		stato := STATI.S3;
+	END_IF
+	
+STATI.S3:
+	IF tr_S3_S1 THEN
+		stato := STATI.S1;
+	ELSIF tr_S3_S0 THEN
+		stato := STATI.S0;
+	END_IF	
+	
+STATI.SE:
+	IF tr_SE_SA THEN
+		stato := STATI.SA;
+	END_IF
+
+STATI.SA:
+	IF tr_SA_S0 THEN
+		stato := STATI.S0;
+	END_IF
+	
+ELSE
+	stato := STATI.SE;	
+END_CASE
+
+// 7. comando delle uscite
+H1 := stato <> STATI.S0;
+HEMG := (stato = STATI.SE) OR osc.q;
+M := (stato = STATI.S2) OR (stato = STATI.S3);
+
+// nastro libero se (enable = true e pckout.q) o (fc1 libero in S1);
+// nastro occupato se enable = false o fc1.rise o stato = S0
+IF (enable AND (pckout.q)) OR (stato = STATI.S1 AND NOT fc1) THEN
+	libero := TRUE;
+ELSIF (NOT enable) OR pckin.Q OR stato = STATI.S0 THEN
+	libero := FALSE;
+END_IF]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

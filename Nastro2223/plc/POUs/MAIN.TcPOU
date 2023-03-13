@@ -1,0 +1,23 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.12">
+  <POU Name="MAIN" Id="{61fcc61d-2ea2-427b-827c-c7a65c42e900}" SpecialFunc="None">
+    <Declaration><![CDATA[PROGRAM MAIN
+VAR
+	nastro	:	FB_MSF();
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[nastro(
+	start:= IO.start, 
+	stop:= IO.stop, 
+	emg:= IO.emg, 
+	ack:= IO.ack, 
+	fc1:= IO.fc1, 
+	fc2:= IO.fc2, 
+	H1=> IO.H1, 
+	HEMG=> IO.HEMG, 
+	M=> IO.M, 
+	libero=> IO.libero);]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>
